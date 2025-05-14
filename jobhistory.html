@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSSQL job execution history viewer</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 0;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .logo {
+            width: 50px;
+            height: 50px;
+            margin-right: 15px;
+            background-color: #e74c3c;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 24px;
+        }
+        .header-content {
+            text-align: left;
+        }
+        .page {
+            display: none;
+            flex: 1;
+            padding: 20px;
+        }
+        .page.active {
+            display: block;
+        }
+        .big-title {
+            font-size: 2.5rem;
+            color: #2c3e50;
+            margin: 30px 0;
+            font-weight: bold;
+        }
+        .big-button {
+            display: inline-block;
+            width: 200px;
+            height: 200px;
+            margin: 20px;
+            font-size: 24px;
+            line-height: 200px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .big-button:hover {
+            background-color: #45a049;
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .big-button.beta {
+            background-color: #2196F3;
+        }
+        .big-button.beta:hover {
+            background-color: #0b7dda;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin: 10px 0;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .copy-btn {
+            background-color: #2196F3;
+        }
+        .copy-btn:hover {
+            background-color: #0b7dda;
+        }
+        .paste-btn {
+            background-color: #ff9800;
+        }
+        .paste-btn:hover {
+            background-color: #e68a00;
+        }
+        .output {
+            text-align: left;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .output-line {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .button-group {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        footer {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 0;
+            margin-top: auto;
+        }
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        .footer-links a {
+            color: #ecf0f1;
+            margin: 0 10px;
+            text-decoration: none;
+        }
+        .footer-links a:hover {
+            text-decoration: underline;
+        }
+        /* Hide header and footer on pages 2 and 3 */
+        #page2 ~ header, #page3 ~ header,
+        #page2 ~ footer, #page3 ~ footer {
+            display: none;
+        }
+        .output-lines {
+            margin-top: 30px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+        }
+        canvas {
+            display: block;
+            width: 100% !important; /* Override any conflicting styles */            
+            margin: 0 auto;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }        
+        #canvas-tooltip {
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            z-index: 100;
+            max-width: 200px;
+            word-wrap: break-word;
+        }   
+        .reference-text-container {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .textarea-with-button {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start; /* Aligns button with top of textarea */
+        }
+        #referenceText {
+            flex: 1; /* Takes remaining space */
+            height: 200px; /* Fixed height or use min-height */
+            resize: vertical; /* Allows user to resize vertically if needed */
+        }
+        .copy-btn {
+            /* Keep your existing button styles */
+            height: fit-content; /* Makes button height match its content */
+            margin-top: 0; /* Remove any default top margin */
+            white-space: nowrap; /* Prevents text wrapping */
+        }
+        .paste-btn {
+            /* Keep your existing button styles */
+            height: fit-content; /* Makes button height match its content */
+            margin-top: 0; /* Remove any default top margin */
+            white-space: nowrap; /* Prevents text wrapping */
+        }             
+    </style>
+</head>
+<body>
+    <!-- Header only shows on page 1 -->
+    <header id="main-header">
+        <div class="logo">sql</div>
+        <div class="header-content">
+            <h1>Charts for SQL server DBAs</h1>
+            <p>For MS SQL server admins, an overview of your SQL agent job history</p>
+        </div>
+    </header>
+
+    <!-- Page 1 - Selection -->
+    <div id="page1" class="page active">
+        <div class="big-title">Visualize MS SQL server Job Execution History</div>
+        <p>Please select one of 2 chart types:</p>
+        
+        <div>
+            <button id="alphaBtn" class="big-button">Specific Job</button>
+            <button id="betaBtn" class="big-button beta">All long Jobs</button>
+        </div>
+        
+        <div style="margin-top: 40px;">
+            <h3>Your privacy:</h3>
+            <p>This site doesn't record any data - it works without any backend</p>
+            <p>No cookies are used</p>
+        </div>
+
+        <footer id="main-footer">
+            <div class="footer-content">
+                <div>2025 private hobby projects. &nbsp;&nbsp;Contacts:</div>
+                <div class="footer-links">
+                    <a href="https://www.linkedin.com/in/dmitry-tsuranov-b136961/">LinkedIn</a>
+                    <a href="https://t.me/PikachouFr">Telegram</a>
+                    <a href="https://habr.com/ru/users/Tzimie/articles/">Habr</a>
+                    <a href="https://github.com/tzimie/sqlpig">GitHub</a>
+                    <a href="https://www.actionatdistance.com/gentlerebuild">Gentle Rebuild</a>
+                    <a href="...">Donate</a>
+                </div>
+            </div>
+        </footer>
+    
+        
+    </div>
+
+    <!-- Page 2 - Data Entry -->
+    <div id="page2" class="page">
+        <h1 id="page2Title">Data Entry</h1>
+        <div class="reference-text-container">
+            <h3>SQL Query</h3>
+            <div class="textarea-with-button">
+                <textarea id="referenceText" readonly></textarea>
+                <button id="copyBtn" class="copy-btn">Copy Text</button>
+            </div>
+        </div>
+        <div class="reference-text-container">
+            <h3>Query Result</h3>
+            <div class="textarea-with-button">
+                <textarea id="userData" placeholder="Paste result of SQL query above here..."></textarea>
+                <button id="pasteBtn" class="paste-btn">Paste</button>
+            </div>
+        </div>
+        <div class="button-group">
+            <button id="backBtn1">Back</button>
+            <button id="nextBtn">Next</button>
+        </div>
+    </div>
+
+    <!-- Page 3 - Results -->
+    <div id="page3" class="page">
+        <div id="output" class="output"></div>
+        <button id="backBtn2">Back</button>
+    </div>
+
+    <!-- Footer only shows on page 1 -->
+    <footer id="main-footer">
+        <div class="footer-content">
+            <div>2025 Private Hobby Projects. Contacts:</div>
+            <div class="footer-links">
+                <a href="#">LinkedIn</a>
+                <a href="https://t.me/PikachouFr">Telegram</a>
+                <a href="https://habr.com/ru/users/Tzimie/articles/">Habr</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Page navigation
+        const pages = document.querySelectorAll('.page');
+        let currentPage = 1;
+        let selectedOption = '';
+
+        // Alpha and Beta content
+        const content = {
+            alpha: `declare @jobname nvarchar(255)=N'specify your job here' --- *****
+select convert(nvarchar,step_id)+':'+step_name+'@'+rundate
+  +'@'+convert(nvarchar,runtime)+'@'+convert(nvarchar,duration)
+  +'@'+convert(nvarchar,1-run_status) as Result
+from (
+select name, step_id, step_name, run_status, convert(varchar,rundate,102) as rundate,
+  datediff(dd, dateadd(ss, runtime, rundate), getdate()) as runday, 
+  runtime, duration
+from (
+select name, step_id, step_name, run_status, 
+  convert(datetime,rundate) as rundate,
+  runtimeh*3600+runtimem*60+runtimes as runtime,
+  durh*3600+durm*60+durs as duration
+from (
+select J.name,
+  S.step_id, S.step_name, run_time,
+  run_time/10000 as runtimeh, run_time/100%100 as runtimem, run_time%100 as runtimes, 
+  run_duration/10000 as durh, run_duration/100%100 as durm, run_duration%100 as durs,
+  convert(date,convert(varchar,run_date)) as rundate,
+  convert(varchar,run_duration) as run_duration,
+  run_status
+  from msdb..sysjobhistory H
+  inner join msdb..sysjobs J on J.job_id=H.job_id
+  inner join msdb..sysjobsteps S on J.job_id=S.job_id and S.step_id=H.step_id
+  where S.step_id<>0 and run_duration>0 and J.name=@jobname
+) Q ) Q1) Q2
+  where runday<30
+  order by rundate,step_id
+`,
+            beta: `select top 20 -- number of longest jobs to display, you can decrease this number
+  name,sum(duration) as duration into #longest from 
+  (select name, durh*3600+durm*60+durs as duration
+  from (
+    select J.name, 
+      run_duration/10000 as durh, run_duration/100%100 as durm, run_duration%100 as durs,
+      convert(date,convert(varchar,run_date)) as rundate,
+      convert(varchar,run_duration) as run_duration
+      from msdb..sysjobhistory H
+      inner join msdb..sysjobs J on J.job_id=H.job_id
+      where H.step_id=0
+	  ) Q where rundate>=getdate()-7
+  ) Q1 group by name order by 2 desc
+
+select name+'@'+convert(varchar,rundate,102)+'@'+convert(varchar,runday)
+  +'@'+convert(varchar,runtime)+'@'+convert(varchar,duration)+'@'+convert(varchar,run_status)
+  as Result
+from (
+select name, run_status, convert(varchar,rundate,102) as rundate,
+  datediff(dd, dateadd(ss, runtime, rundate), getdate()) as runday, 
+  runtime, duration
+from (
+select name, run_status, 
+  convert(datetime,rundate) as rundate,
+  runtimeh*3600+runtimem*60+runtimes as runtime,
+  durh*3600+durm*60+durs as duration
+from (
+select J.name, run_time,
+  run_time/10000 as runtimeh, run_time/100%100 as runtimem, run_time%100 as runtimes, 
+  run_duration/10000 as durh, run_duration/100%100 as durm, run_duration%100 as durs,
+  convert(date,convert(varchar,run_date)) as rundate,
+  convert(varchar,run_duration) as run_duration,
+  run_status
+  from msdb..sysjobhistory H
+  inner join msdb..sysjobs J on J.job_id=H.job_id
+  where H.step_id=0 and J.name in (select name from #longest)
+) Q ) Q1) Q2
+  where runday<7
+  order by name,runday desc,runtime
+drop table #longest
+`
+        };
+
+        var currentMode = null; // 'alpha' or 'beta'
+
+        // DOM elements
+        const alphaBtn = document.getElementById('alphaBtn');
+        const betaBtn = document.getElementById('betaBtn');
+        const page2Title = document.getElementById('page2Title');
+        const referenceText = document.getElementById('referenceText');
+        const copyBtn = document.getElementById('copyBtn');
+        const pasteBtn = document.getElementById('pasteBtn');
+        const userData = document.getElementById('userData');
+        const nextBtn = document.getElementById('nextBtn');
+        const backBtn1 = document.getElementById('backBtn1');
+        const backBtn2 = document.getElementById('backBtn2');
+        const output = document.getElementById('output');
+        const mainHeader = document.getElementById('main-header');
+        const mainFooter = document.getElementById('main-footer');
+
+        // Event listeners
+        alphaBtn.addEventListener('click', () => navigateToPage(2, 'alpha'));
+        betaBtn.addEventListener('click', () => navigateToPage(2, 'beta'));
+        copyBtn.addEventListener('click', copyText);
+        pasteBtn.addEventListener('click', pasteText);
+        nextBtn.addEventListener('click', () => navigateToPage(3));
+        backBtn1.addEventListener('click', () => navigateToPage(1));
+        backBtn2.addEventListener('click', () => navigateToPage(2));
+
+        // Functions
+        function navigateToPage(pageNumber, option = null) {
+            // Hide all pages
+            pages.forEach(page => page.classList.remove('active'));
+            
+            // Show the selected page
+            document.getElementById(`page${pageNumber}`).classList.add('active');
+            currentPage = pageNumber;
+            
+            // Show/hide header and footer based on page
+            if (pageNumber === 1) {
+                mainHeader.style.display = 'flex';
+                mainFooter.style.display = 'block';
+            } else {
+                mainHeader.style.display = 'none';
+                mainFooter.style.display = 'none';
+            }
+            
+            // Handle page-specific logic
+            if (pageNumber === 2 && option) {
+                selectedOption = option;
+                page2Title.textContent = 'Copy query, execute and paste the result';
+                referenceText.value = content[option];
+                userData.value = '';
+            } else if (pageNumber === 3) {
+                displayResults();
+            }
+        }
+
+        function copyText() {
+            referenceText.select();
+            document.execCommand('copy');
+            alert('Text copied to clipboard!');
+        }
+
+        async function pasteText() {
+            try {
+                const text = await navigator.clipboard.readText();
+                userData.value = text;
+            } catch (err) {
+                alert('Failed to read from clipboard. Please paste manually (Ctrl+V).');
+                console.error('Failed to read clipboard contents: ', err);
+                userData.focus();
+            }
+        }
+
+        function getDaysBetweenDates(dateStr1, dateStr2) {
+            // Convert the custom format to standard ISO format (YYYY-MM-DD)
+            const isoDate1 = dateStr1.replace(/\./g, '-');
+            const isoDate2 = dateStr2.replace(/\./g, '-');
+            
+            const date1 = new Date(isoDate1);
+            const date2 = new Date(isoDate2);
+            
+            const diffTime = Math.abs(date2 - date1);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays;
+            }        
+
+        function getPreviousDate(dateStr, n) {
+            const [year, month, day] = dateStr.split('.').map(Number);
+            const date = new Date(year, month - 1, day);
+            date.setDate(date.getDate() - n);
+            const prevYear = date.getFullYear();
+            const prevMonth = String(date.getMonth() + 1).padStart(2, '0');
+            const prevDay = String(date.getDate()).padStart(2, '0');
+            return `${prevYear}.${prevMonth}.${prevDay}`;
+            }            
+
+        function drawRectangleWithTooltip(ctx, x, y, width, height, color, tooltipText, intoPast=0, upSpacing=0) {
+
+            var verticalShift = 0;
+            var colorBlack = 'black';
+            if (intoPast > 0) {
+                let r, g, b;
+                if (color === 'red') {
+                    r = 255; g = 0; b = 0;
+                } else if (color === 'green') {
+                    r = 0; g = 255; b = 0;
+                } else if (color === 'yellow') {
+                    r = 255; g = 255; b = 0;            
+                }
+
+                const pct = 100.0 - intoPast*100/7;
+                verticalShift = intoPast * upSpacing/12;
+
+                // Calculate mixed color with white
+                const mixedR = Math.round(255 - (255 - r) * (pct / 100));
+                const mixedG = Math.round(255 - (255 - g) * (pct / 100));
+                const mixedB = Math.round(255 - (255 - b) * (pct / 100));
+                const mixedBlack = Math.round(255 - 255 * (pct / 100));
+
+                color = `rgb(${mixedR}, ${mixedG}, ${mixedB})`;            
+                colorBlack = `rgb(${mixedBlack}, ${mixedBlack}, ${mixedBlack})`;            
+            }
+
+            y -= verticalShift;
+            
+            ctx.save();
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeStyle = colorBlack;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, width, height);
+            ctx.restore();
+            
+            const canvas = ctx.canvas;
+            let tooltip = document.getElementById('canvas-tooltip');
+            tooltip = document.createElement('div');
+            tooltip.id = 'canvas-tooltip';
+            tooltip.style.position = 'absolute';
+            tooltip.style.background = 'white';
+            tooltip.style.border = '1px solid black';
+            tooltip.style.padding = '5px';
+            tooltip.style.borderRadius = '3px';
+            tooltip.style.pointerEvents = 'none';
+            tooltip.style.display = 'none';
+            document.body.appendChild(tooltip);
+            
+            // Mouse event handlers
+            canvas.addEventListener('mousemove', (e) => {
+
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;  // Add scaling factors
+                const scaleY = canvas.height / rect.height;
+                const mouseX = (e.clientX - rect.left) * scaleX;
+                const mouseY = (e.clientY - rect.top) * scaleY;                
+
+                // Check if mouse is over the rectangle
+                if (mouseX >= x && mouseX <= x + width && 
+                    mouseY >= y && mouseY <= y + height) {
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = `${e.clientX + 10}px`;
+                    tooltip.style.top = `${e.clientY + 10}px`;
+                    tooltip.textContent = tooltipText;
+                } else {
+                    tooltip.style.display = 'none';
+                }
+            });
+                
+            canvas.addEventListener('mouseout', () => {
+                tooltip.style.display = 'none';
+            });
+        }
+
+        function secondsToHMS(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            
+            return [
+                hours.toString().padStart(2, '0'),
+                minutes.toString().padStart(2, '0'),
+                secs.toString().padStart(2, '0')
+            ].join(':');
+        }
+
+        function displayResultsOne() {
+
+            output.innerHTML = '';
+            output.style.width = '100%'; // Force full width
+            output.style.display = 'block'; // Ensure it's not inline
+            const lines = userData.value.split('\n');
+            
+            if (lines.length === 0 || (lines.length === 1 && lines[0].trim() === '')) {
+                output.innerHTML = '<div class="output-line">No data entered.</div>';
+                return;
+            }
+
+            // preprocessing
+            var totallines = 0;
+            var minDate = '9999.99.99';
+            var maxDate = '0000.00.00';
+            lines.forEach(line => {
+                if ((line.trim() !== '') && (line.trim() !== 'Result')) {
+                    [stepname, day, start, duration, status] = line.split('@');
+                    if (minDate > day) { minDate = day }
+                    if (maxDate < day) { maxDate = day }
+                    totallines++;
+                }
+            });
+
+            // Determine number of vertical labels (N)
+            const N = Math.min(33, getDaysBetweenDates(minDate,maxDate)+1); // Max 20 labels or less if fewer lines
+
+            // Create canvas for the chart
+            const canvas = document.createElement('canvas');
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = output.clientWidth * dpr; // Scale internal resolution
+            canvas.height = Math.min(output.clientWidth * 0.7, window.innerHeight * 0.7) * dpr;
+            canvas.style.width = '100%'; // Display size (CSS pixels)
+            canvas.style.height = 'auto';
+            output.appendChild(canvas);
+
+            const ctx = canvas.getContext('2d');
+            
+            // Chart dimensions and padding
+            const padding = 80;
+            const chartWidth = canvas.width - padding * 2;
+            const chartHeight = canvas.height - padding * 2;
+            
+            // Draw X and Y axes
+            ctx.beginPath();
+            ctx.moveTo(padding, padding);
+            ctx.lineTo(padding, padding + chartHeight); // Y axis
+            ctx.lineTo(padding + chartWidth, padding + chartHeight); // X axis
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
+            
+            // Draw X axis labels (0h to 24h)
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.font = '12px Arial';
+            
+            for (let i = 0; i <= 24; i++) {
+                const x = padding + (i / 24) * chartWidth;
+                
+                // Hour marks
+                ctx.beginPath();
+                ctx.moveTo(x, padding + chartHeight);
+                ctx.lineTo(x, padding + chartHeight + 5);
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // Hour labels
+                ctx.fillText(`${i}h`, x, padding + chartHeight + 8);
+                ctx.lineWidth = 2;
+                
+                // Vertical gridlines (lighter)
+                if (i < 24) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, padding);
+                    ctx.lineTo(x, padding + chartHeight);
+                    ctx.lineWidth = 0.5;
+                    if (i % 3 === 0) {
+                        ctx.lineWidth = 1.5;
+                    }
+                    if (i % 6 === 0) {
+                        ctx.lineWidth = 2.5;
+                    }
+                    ctx.strokeStyle = '#ddd';
+                    ctx.stroke();
+                }
+            }
+            
+            // Draw Y axis labels and horizontal gridlines
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            
+            for (let i = 0; i <= N-1; i++) {
+                const y = padding + chartHeight - (i / N) * chartHeight;
+                
+                // Value marks
+                ctx.beginPath();
+                ctx.moveTo(padding - 5, y);
+                ctx.lineTo(padding, y);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = '#000';
+                ctx.stroke();
+                
+                // Value labels
+                ctx.fillText(getPreviousDate(maxDate, i), padding - 10, y);
+                
+                // Horizontal gridlines (lighter)
+                if (i > 0) {
+                    ctx.beginPath();
+                    ctx.moveTo(padding, y);
+                    ctx.lineTo(padding + chartWidth, y);
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeStyle = '#ddd';
+                    ctx.stroke();
+                }
+            }
+            
+            // Add X axis label
+            ctx.textAlign = 'center';
+            ctx.fillText('Time (hours)', padding + chartWidth / 2, padding + chartHeight + 30);
+            
+            lines.forEach(line => {
+                if ((line.trim() !== '') && (line.trim() !== 'Result')) {
+                    [stepname, day, start, duration, status] = line.split('@');
+                    let descr = stepname + " " + secondsToHMS(+start)+ " - " + secondsToHMS(+start + +duration);
+                    let durationD = +duration;
+                    let startD = +start;
+                    let vert = getDaysBetweenDates(minDate, day) + 1;
+                    do {
+                        let y = padding + (vert / N) * chartHeight;
+                        let xleft = startD * chartWidth / 86400.0;
+                        let xwidth = durationD * chartWidth / 86400.0;
+                        let rectHeight = chartHeight / N / 1.7;
+                        if (xleft + xwidth > chartWidth) { // fall into next day, this day is clipped
+                            xwidth = chartWidth - xleft;
+                            vert++;
+                            startD = 0;
+                            durationD -= (86400 - startD);
+                        } else {
+                            durationD = 0;
+                        }
+                        drawRectangleWithTooltip(ctx, xleft+padding, y-rectHeight, xwidth, rectHeight, 
+                            (status === '1') ? 'red' : 'green', 
+                            descr);            
+                    } while (durationD > 0);
+                }
+            });
+        }
+
+        function displayResultsAll() {
+
+            output.innerHTML = '';
+            output.style.width = '100%'; // Force full width
+            output.style.display = 'block'; // Ensure it's not inline
+            const lines = userData.value.split('\n');
+            
+            if (lines.length === 0 || (lines.length === 1 && lines[0].trim() === '')) {
+                output.innerHTML = '<div class="output-line">No data entered.</div>';
+                return;
+            }
+
+            // Create canvas for the chart
+            const canvas = document.createElement('canvas');
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = output.clientWidth * dpr; // Scale internal resolution
+            canvas.height = Math.min(output.clientWidth * 0.7, window.innerHeight * 0.7) * dpr;
+            canvas.style.width = '100%'; // Display size (CSS pixels)
+            canvas.style.height = 'auto';
+            output.appendChild(canvas);
+
+            const ctx = canvas.getContext('2d');
+            
+            // preprocessing
+            var totallines = 0;
+            const distinctJobs = new Set();
+            lines.forEach(line => {
+                if ((line.trim() !== '') && (line.trim() !== 'Result')) {
+                    [jobname, day, daypast, start, duration, status] = line.split('@');
+                    distinctJobs.add(jobname);
+                }
+            });
+
+            // Determine number of vertical labels (N) and max padding
+            const N = distinctJobs.size;
+            const jobs = Array.from(distinctJobs);
+            var maxJobWidth = 0;
+            for(const job of jobs) {
+                const metrics = ctx.measureText(job).width;
+                if (maxJobWidth < metrics) { maxJobWidth = metrics; }
+            }
+
+            // Chart dimensions and padding
+            const padding = 80;
+            const jobPadding = maxJobWidth + 50;
+            const chartWidth = canvas.width - padding - jobPadding;
+            const chartHeight = canvas.height - padding * 2;
+            
+            // Draw X and Y axes
+            ctx.beginPath();
+            ctx.moveTo(jobPadding, padding);
+            ctx.lineTo(jobPadding, padding + chartHeight); // Y axis
+            ctx.lineTo(jobPadding + chartWidth, padding + chartHeight); // X axis
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
+            
+            // Draw X axis labels (0h to 24h)
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.font = '12px Arial';
+            
+            for (let i = 0; i <= 24; i++) {
+                const x = jobPadding + (i / 24) * chartWidth;
+                
+                // Hour marks
+                ctx.beginPath();
+                ctx.moveTo(x, padding + chartHeight);
+                ctx.lineTo(x, padding + chartHeight + 5);
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // Hour labels
+                ctx.fillText(`${i}h`, x, padding + chartHeight + 8);
+                ctx.lineWidth = 2;
+                
+                // Vertical gridlines (lighter)
+                if (i < 24) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, padding);
+                    ctx.lineTo(x, padding + chartHeight);
+                    ctx.lineWidth = 0.5;
+                    if (i % 3 === 0) {
+                        ctx.lineWidth = 1.5;
+                    }
+                    if (i % 6 === 0) {
+                        ctx.lineWidth = 2.5;
+                    }
+                    ctx.strokeStyle = '#ddd';
+                    ctx.stroke();
+                }
+            }
+            
+            // Draw Y axis labels and horizontal gridlines
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            
+            for (let i = 0; i <= N-1; i++) {
+                const y = padding + chartHeight - (i / N) * chartHeight;
+                
+                // Value marks
+                ctx.beginPath();
+                ctx.moveTo(jobPadding - 5, y);
+                ctx.lineTo(jobPadding, y);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = '#000';
+                ctx.stroke();
+                
+                // Value labels
+                ctx.fillText(jobs[i], jobPadding-10, y);
+                
+                // Horizontal gridlines (lighter)
+                if (i > 0) {
+                    ctx.beginPath();
+                    ctx.moveTo(jobPadding, y);
+                    ctx.lineTo(jobPadding + chartWidth, y);
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeStyle = '#ddd';
+                    ctx.stroke();
+                }
+            }
+            
+            // Add X axis label
+            ctx.textAlign = 'center';
+            ctx.fillText('Time (hours)', jobPadding + chartWidth / 2, padding + chartHeight + 30);
+
+            const statuses = ['red', 'green', 'yellow', 'yellow'];
+            lines.forEach(line => {
+                if ((line.trim() !== '') && (line.trim() !== 'Result')) {
+                    [jobname, day, daypast, start, duration, status] = line.split('@');
+                    let descr = jobname + " " + day + " " + secondsToHMS(+start)+ " - " + secondsToHMS(+start + +duration);
+                    let durationD = +duration;
+                    let startD = +start;
+                    let vert = N - jobs.indexOf(jobname);
+                    do {
+                        let y = padding + (vert / N) * chartHeight;
+                        let xleft = startD * chartWidth / 86400.0;
+                        let xwidth = durationD * chartWidth / 86400.0;
+                        let rectHeight = chartHeight / N / 3;
+                        console.log(y, xleft, xwidth, rectHeight, chartWidth)
+                        if (xleft + xwidth > chartWidth) { // fall into next day, this day is clipped
+                            xwidth = chartWidth - xleft;
+                            startD = 0;
+                            durationD -= (86400 - startD);
+                        } else {
+                            durationD = 0;
+                        }
+                        drawRectangleWithTooltip(ctx, xleft+jobPadding, y-rectHeight, xwidth, rectHeight, 
+                            statuses[status], descr, +daypast, chartHeight/N);            
+                    } while (durationD > 0);
+                }
+            }); 
+        }
+
+        function displayResults() {
+            if (selectedOption === 'alpha') { displayResultsOne(); }
+            else { displayResultsAll(); }
+        }
+
+    </script>
+</body>
+<script>
+  if (!('IntersectionObserver' in window)) {
+    var script = document.createElement("script");
+    script.src = "https://raw.githubusercontent.com/w3c/IntersectionObserver/master/polyfill/intersection-observer.js";
+    document.getElementsByTagName('head')[0].appendChild(script);
+  }
+</script>
+<script src="./js/vendor.js?v=1685716269320"></script>
+<script src="./js/main.js?v=1685716269320"></script>
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-42ZTBP78H2"></script>
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+
+gtag('config', 'G-42ZTBP78H2');
+</script> </body>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+</html>
